@@ -11,6 +11,7 @@ dependencies:
     sdk: flutter
   camera: ^0.11.3
   hand_landmarker: ^2.2.0
+  native_device_orientation: ^2.0.4
 
 dev_dependencies:
   flutter_test:
