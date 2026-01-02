@@ -136,19 +136,17 @@ class _CameraHomePageState extends State<CameraHomePage> {
       candidate = GestureRecognizer().recognize(candidateLandmarks, _transformMode);
 
       if (candidate != GestureStatus.empty && candidate != GestureStatus.warmup) {
+        final Landmark wrist = candidateLandmarks[0];
         final Landmark thumbTip = candidateLandmarks[4];
         final Landmark indexTip = candidateLandmarks[8];
 
-        Offset transformed;
+        // Центр треугольника: wrist + thumbTip + indexTip
+        final double centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
+        final double centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
 
-        if (candidate == GestureStatus.ok) {
-          transformed = _transformLandmark(indexTip.x, indexTip.y);
-        } else {
-          transformed = _transformLandmark(thumbTip.x, thumbTip.y);
-        }
-
+        final Offset transformed = _transformLandmark(centerX, centerY);
         candidateX = transformed.dx;
-        candidateY = transformed.dy - 40;
+        candidateY = transformed.dy - 20; // небольшое смещение вверх для красоты
       }
     }
 
@@ -160,19 +158,27 @@ class _CameraHomePageState extends State<CameraHomePage> {
     if (_gestureDebugMode == 1) {
       finalCandidate = GestureStatus.thumbsUp;
       if (candidateLandmarks.isNotEmpty) {
+        final Landmark wrist = candidateLandmarks[0];
         final Landmark thumbTip = candidateLandmarks[4];
-        final Offset t = _transformLandmark(thumbTip.x, thumbTip.y);
+        final Landmark indexTip = candidateLandmarks[8];
+        final double centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
+        final double centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
+        final Offset t = _transformLandmark(centerX, centerY);
         finalX = t.dx;
-        finalY = t.dy - 40;
+        finalY = t.dy - 20;
         finalLandmarks = candidateLandmarks;
       }
     } else if (_gestureDebugMode == 2) {
       finalCandidate = GestureStatus.thumbsDown;
       if (candidateLandmarks.isNotEmpty) {
+        final Landmark wrist = candidateLandmarks[0];
         final Landmark thumbTip = candidateLandmarks[4];
-        final Offset t = _transformLandmark(thumbTip.x, thumbTip.y);
+        final Landmark indexTip = candidateLandmarks[8];
+        final double centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
+        final double centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
+        final Offset t = _transformLandmark(centerX, centerY);
         finalX = t.dx;
-        finalY = t.dy - 40;
+        finalY = t.dy - 20;
         finalLandmarks = candidateLandmarks;
       }
     } else if (_gestureDebugMode == 3) {
