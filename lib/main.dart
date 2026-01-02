@@ -7,7 +7,6 @@ late List<CameraDescription> _cameras;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   _cameras = await availableCameras();
-
   runApp(const MyApp());
 }
 
