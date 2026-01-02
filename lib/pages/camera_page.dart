@@ -4,8 +4,7 @@ import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:native_device_orientation/native_device_orientation.dart';
 import '../painters/gesture_painter.dart';
 import '../painters/landmark_painter.dart';
-
-enum GestureStatus { empty, warmup, thumbsUp, thumbsDown }
+import '../utils/gesture_recognizer.dart'; // ← новый файл
 
 class CameraHomePage extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -19,16 +18,16 @@ class CameraHomePage extends StatefulWidget {
 class _CameraHomePageState extends State<CameraHomePage> {
   CameraController? _controller;
   HandLandmarkerPlugin? _landmarker;
+
   bool _isDetecting = false;
   GestureStatus _status = GestureStatus.empty;
   int _stableCount = 0;
-  final int _requiredStable = 10;
   double _gestureX = 0;
   double _gestureY = 0;
   List<Landmark> _currentLandmarks = [];
   int _frameSkip = 0;
 
-  int _transformMode = 3; // Default to mode 3 (perfect for portrait up)
+  int _transformMode = 3; // твой идеальный режим для portrait up
 
   @override
   void initState() {
@@ -67,28 +66,26 @@ class _CameraHomePageState extends State<CameraHomePage> {
       int newMode;
       switch (orientation) {
         case NativeDeviceOrientation.portraitUp:
-          newMode = 3; // Your tested perfect for main vertical
+          newMode = 3;
           break;
-        case NativeDeviceOrientation.landscapeRight: // Home button right = rotated CW
-          newMode = 1; // Your tested perfect for CW
+        case NativeDeviceOrientation.landscapeRight:
+          newMode = 1;
           break;
-        case NativeDeviceOrientation.landscapeLeft: // Home button left = rotated CCW
-          newMode = 2; // Your tested perfect for CCW
+        case NativeDeviceOrientation.landscapeLeft:
+          newMode = 2;
           break;
         case NativeDeviceOrientation.portraitDown:
-          newMode = 2; // Your tested perfect for 180°
+          newMode = 2;
           break;
         default:
           newMode = 3;
       }
-
       if (newMode != _transformMode && mounted) {
         setState(() => _transformMode = newMode);
       }
     });
   }
 
-  // Optional: manual cycle for testing (tap the debug indicator)
   void _cycleTransformMode() {
     setState(() {
       _transformMode = (_transformMode + 1) % 4;
@@ -104,6 +101,8 @@ class _CameraHomePageState extends State<CameraHomePage> {
       setState(() {
         _status = GestureStatus.empty;
         _currentLandmarks = [];
+        _gestureX = 0;
+        _gestureY = 0;
       });
     }
   }
@@ -127,35 +126,17 @@ class _CameraHomePageState extends State<CameraHomePage> {
       final Hand hand = hands.first;
       candidateLandmarks = hand.landmarks;
 
-      if (candidateLandmarks.length >= 21) {
-        final Landmark thumbTip = candidateLandmarks[4];
+      candidate = GestureRecognizer().recognize(candidateLandmarks);
+
+      if (candidate == GestureStatus.thumbsUp || candidate == GestureStatus.thumbsDown) {
         final Landmark indexTip = candidateLandmarks[8];
-        final Landmark wrist = candidateLandmarks[0];
-
-        final double thumbToWrist =
-            (thumbTip.x - wrist.x).abs() + (thumbTip.y - wrist.y).abs();
-
-        if (thumbToWrist < 0.1) {
-          candidate = GestureStatus.warmup;
-        } else {
-          final double yDiff = thumbTip.y - indexTip.y;
-          if (yDiff > 0.05) {
-            candidate = GestureStatus.thumbsUp;
-          } else if (yDiff < -0.05) {
-            candidate = GestureStatus.thumbsDown;
-          } else {
-            candidate = GestureStatus.warmup;
-          }
-
-          final Offset transformed = _transformLandmark(indexTip.x, indexTip.y);
-          candidateX = transformed.dx;
-          candidateY = transformed.dy;
-        }
-      } else {
-        candidate = GestureStatus.warmup;
+        final Offset transformed = _transformLandmark(indexTip.x, indexTip.y);
+        candidateX = transformed.dx;
+        candidateY = transformed.dy;
       }
     }
 
+    // Стабильность жеста
     if (candidate == _status) {
       _stableCount++;
     } else {
@@ -163,7 +144,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
       _status = candidate;
     }
 
-    if (_stableCount >= _requiredStable && mounted) {
+    if (_stableCount >= GestureRecognizer.requiredStableFrames && mounted) {
       setState(() {
         _gestureX = candidateX;
         _gestureY = candidateY;
@@ -178,7 +159,6 @@ class _CameraHomePageState extends State<CameraHomePage> {
 
     final int sensorOrientation = _controller!.description.sensorOrientation;
 
-    // Base sensor rotation correction
     if (sensorOrientation == 270) {
       tx = y;
       ty = x;
@@ -187,21 +167,20 @@ class _CameraHomePageState extends State<CameraHomePage> {
       ty = x;
     }
 
-    // Apply your proven transform mode
     switch (_transformMode) {
       case 0:
         break;
-      case 1: // CW horizontal
+      case 1:
         final temp = tx;
         tx = ty;
         ty = 1.0 - temp;
         break;
-      case 2: // CCW horizontal OR 180° vertical
+      case 2:
         final temp = tx;
         tx = 1.0 - ty;
         ty = temp;
         break;
-      case 3: // Main vertical (portrait up)
+      case 3:
         tx = 1.0 - tx;
         ty = 1.0 - ty;
         break;
@@ -230,13 +209,13 @@ class _CameraHomePageState extends State<CameraHomePage> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // FIXED PREVIEW: Perfect alignment, no cropping/zoom issues
+          // Превью без кропа и зеркала — идеальное выравнивание
           AspectRatio(
             aspectRatio: _controller!.value.aspectRatio,
             child: CameraPreview(_controller!),
           ),
 
-          // Optional debug indicator (tap to cycle manually)
+          // Дебаг-индикатор (тап — переключение режима)
           Positioned(
             top: 40,
             left: 20,
@@ -248,7 +227,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 alignment: Alignment.center,
                 child: Text(
-                  'Mode: $_transformMode (auto from rotation • tap to override)',
+                  'Mode: $_transformMode (auto • tap to override)',
                   style: const TextStyle(color: Colors.white, fontSize: 16),
                 ),
               ),
@@ -257,8 +236,8 @@ class _CameraHomePageState extends State<CameraHomePage> {
 
           Center(child: _buildStatusOverlay()),
 
-          if (_status == GestureStatus.thumbsUp ||
-              _status == GestureStatus.thumbsDown)
+          // Эмодзи 👍 / 👎
+          if (_status == GestureStatus.thumbsUp || _status == GestureStatus.thumbsDown)
             CustomPaint(
               painter: GesturePainter(
                 _status == GestureStatus.thumbsUp ? '👍' : '👎',
@@ -269,6 +248,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
               child: const SizedBox.expand(),
             ),
 
+          // Лендмарки руки
           if (_isDetecting && _currentLandmarks.isNotEmpty)
             CustomPaint(
               painter: LandmarkPainter(
@@ -280,6 +260,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
               child: const SizedBox.expand(),
             ),
 
+          // Кнопка старт/стоп
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
@@ -310,8 +291,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
           children: [
             Icon(Icons.panorama_fish_eye, size: 100, color: Colors.grey),
             SizedBox(height: 20),
-            Text('Show your hand',
-                style: TextStyle(fontSize: 24, color: Colors.white)),
+            Text('Show your hand', style: TextStyle(fontSize: 24, color: Colors.white)),
           ],
         );
       case GestureStatus.warmup:
@@ -320,8 +300,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
           children: [
             Icon(Icons.panorama_fish_eye, size: 100, color: Colors.yellow),
             SizedBox(height: 20),
-            Text('Hand detected',
-                style: TextStyle(fontSize: 24, color: Colors.white)),
+            Text('Hand detected', style: TextStyle(fontSize: 24, color: Colors.white)),
           ],
         );
       default:
