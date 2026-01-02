@@ -33,7 +33,6 @@ class _CameraHomePageState extends State<CameraHomePage> {
   List<Landmark> _currentLandmarks = [];
 
   int _transformMode = 3;
-  int _gestureDebugMode = 0;
   int _frameSkip = 0;
 
   @override
@@ -106,6 +105,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
     if (hands.isNotEmpty) {
       final hand = hands.first;
       candidateLandmarks = hand.landmarks;
+
       candidate = GestureRecognizer().recognize(candidateLandmarks, _transformMode);
 
       if (candidate != GestureStatus.empty && candidate != GestureStatus.warmup) {
@@ -128,35 +128,6 @@ class _CameraHomePageState extends State<CameraHomePage> {
       }
     }
 
-    // Debug overrides
-    if (_gestureDebugMode > 0) {
-      if (_gestureDebugMode == 1) candidate = GestureStatus.thumbsUp;
-      if (_gestureDebugMode == 2) candidate = GestureStatus.thumbsDown;
-      if (_gestureDebugMode == 3) {
-        candidate = GestureStatus.warmup;
-        candidateLandmarks = [];
-      }
-      // Recalculate position for forced thumbs up/down
-      if (_gestureDebugMode <= 2 && candidateLandmarks.isNotEmpty) {
-        final wrist = candidateLandmarks[0];
-        final thumbTip = candidateLandmarks[4];
-        final indexTip = candidateLandmarks[8];
-        final centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
-        final centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
-        final t = transformLandmark(
-          x: centerX,
-          y: centerY,
-          sensorOrientation: _controller!.description.sensorOrientation,
-          transformMode: _transformMode,
-          screenSize: MediaQuery.of(context).size,
-        );
-        candidateX = t.dx;
-        candidateY = t.dy + AppConstants.gestureYOffset;
-        candidateLandmarks = candidateLandmarks;
-      }
-    }
-
-    // Stability check
     if (candidate == _status) {
       _stableCount++;
     } else {
@@ -170,6 +141,13 @@ class _CameraHomePageState extends State<CameraHomePage> {
         _gestureY = candidateY;
         _currentLandmarks = candidateLandmarks;
       });
+    } else if (_status == GestureStatus.warmup || candidate == GestureStatus.warmup) {
+      // Always update landmarks during warmup to show skeleton
+      if (mounted && candidateLandmarks.isNotEmpty) {
+        setState(() {
+          _currentLandmarks = candidateLandmarks;
+        });
+      }
     }
   }
 
@@ -194,29 +172,8 @@ class _CameraHomePageState extends State<CameraHomePage> {
             aspectRatio: _controller!.value.aspectRatio,
             child: CameraPreview(_controller!),
           ),
-          DetectionControls(
-            isDetecting: _isDetecting,
-            onToggle: _toggleDetection,
-            onCycleTransform: () => setState(() => _transformMode = (_transformMode + 1) % 4),
-            onCycleDebug: () => setState(() => _gestureDebugMode = (_gestureDebugMode + 1) % 4),
-            transformMode: _transformMode,
-            debugMode: _gestureDebugMode,
-          ),
-          Center(child: StatusOverlay(_status)),
-          if (_status == GestureStatus.thumbsUp || _status == GestureStatus.thumbsDown || _status == GestureStatus.ok)
-            CustomPaint(
-              painter: GesturePainter(
-                _status == GestureStatus.thumbsUp
-                    ? '👍'
-                    : _status == GestureStatus.thumbsDown
-                        ? '👎'
-                        : '👌',
-                _gestureX,
-                _gestureY,
-                _status == GestureStatus.thumbsUp || _status == GestureStatus.ok ? Colors.green : Colors.red,
-              ),
-              child: const SizedBox.expand(),
-            ),
+
+          // Hand skeleton + dots (always shown when hand is visible)
           if (_isDetecting && _currentLandmarks.isNotEmpty)
             CustomPaint(
               painter: LandmarkPainter(
@@ -227,6 +184,33 @@ class _CameraHomePageState extends State<CameraHomePage> {
               ),
               child: const SizedBox.expand(),
             ),
+
+          Center(child: StatusOverlay(_status)),
+
+          // Final gesture emoji
+          if (_status == GestureStatus.thumbsUp ||
+              _status == GestureStatus.thumbsDown ||
+              _status == GestureStatus.ok)
+            CustomPaint(
+              painter: GesturePainter(
+                _status == GestureStatus.thumbsUp
+                    ? '👍'
+                    : _status == GestureStatus.thumbsDown
+                        ? '👎'
+                        : '👌',
+                _gestureX,
+                _gestureY,
+                _status == GestureStatus.thumbsUp || _status == GestureStatus.ok
+                    ? Colors.green
+                    : Colors.red,
+              ),
+              child: const SizedBox.expand(),
+            ),
+
+          DetectionControls(
+            isDetecting: _isDetecting,
+            onToggle: _toggleDetection,
+          ),
         ],
       ),
     );

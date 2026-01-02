@@ -47,7 +47,6 @@ class GestureRecognizer {
     final thumbLength = (thumbTip.x - wrist.x).abs() + (thumbTip.y - wrist.y).abs();
     if (thumbLength < GestureThresholds.minThumbLength) return GestureStatus.warmup;
 
-    // Thumbs up / down direction
     GestureStatus detected;
     if (transformMode == 3) {
       final xDiff = thumbTip.x - indexMcp.x;
@@ -69,7 +68,6 @@ class GestureRecognizer {
       }
     }
 
-    // Landscape right (mode 1) swaps up/down
     if (transformMode == 1) {
       return detected == GestureStatus.thumbsUp ? GestureStatus.thumbsDown : GestureStatus.thumbsUp;
     }

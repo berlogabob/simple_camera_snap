@@ -16,8 +16,8 @@ class LandmarkPainter extends CustomPainter {
     if (landmarks.isEmpty) return;
 
     final linePaint = Paint()
-      ..color = Colors.grey.withAlpha(153)
-      ..strokeWidth = 3
+      ..color = Colors.white.withOpacity(0.6)
+      ..strokeWidth = 4
       ..style = PaintingStyle.stroke;
 
     final dotPaint = Paint()..style = PaintingStyle.fill;
@@ -44,11 +44,20 @@ class LandmarkPainter extends CustomPainter {
     for (int i = 0; i < landmarks.length; i++) {
       final lm = landmarks[i];
       final pos = transformLandmark(x: lm.x, y: lm.y, sensorOrientation: sensorOrientation, transformMode: transformMode, screenSize: screenSize);
-      dotPaint.color = (i == 4) ? Colors.blue : (i == 8) ? Colors.red : Colors.grey;
-      canvas.drawCircle(pos, AppConstants.landmarkDotRadius, dotPaint);
+
+      if (i == 4) {
+        dotPaint.color = Colors.cyanAccent;
+        canvas.drawCircle(pos, 12, dotPaint);
+      } else if (i == 8) {
+        dotPaint.color = Colors.pinkAccent;
+        canvas.drawCircle(pos, 12, dotPaint);
+      } else {
+        dotPaint.color = Colors.white;
+        canvas.drawCircle(pos, AppConstants.landmarkDotRadius, dotPaint);
+      }
     }
   }
 
   @override
-  bool shouldRepaint(covariant LandmarkPainter old) => true; // landmarks list changes every frame
+  bool shouldRepaint(covariant LandmarkPainter old) => true;
 }

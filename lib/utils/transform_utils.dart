@@ -10,7 +10,6 @@ Offset transformLandmark({
   double tx = x;
   double ty = y;
 
-  // Handle common Android front-camera sensor orientations
   if (sensorOrientation == 270) {
     final temp = tx;
     tx = ty;
@@ -20,7 +19,6 @@ Offset transformLandmark({
     ty = tx;
   }
 
-  // Apply manual rotation / mirroring
   switch (transformMode) {
     case 1:
       final temp = tx;
