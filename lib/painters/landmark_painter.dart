@@ -49,7 +49,7 @@ class LandmarkPainter extends CustomPainter {
 
     final dotPaint = Paint()..style = PaintingStyle.fill;
     final linePaint = Paint()
-      ..color = Colors.grey.withOpacity(0.6)
+      ..color = Colors.grey.withAlpha(153)
       ..strokeWidth = 3
       ..style = PaintingStyle.stroke;
 

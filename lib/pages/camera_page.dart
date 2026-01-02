@@ -51,7 +51,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
 
     await _controller!.initialize();
 
-    _landmarker = await HandLandmarkerPlugin.create(
+    _landmarker = HandLandmarkerPlugin.create(
       numHands: 1,
       minHandDetectionConfidence: 0.5,
       delegate: HandLandmarkerDelegate.gpu,
@@ -244,7 +244,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
             child: GestureDetector(
               onTap: _cycleTransformMode,
               child: Container(
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withAlpha(153),
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 alignment: Alignment.center,
                 child: Text(
