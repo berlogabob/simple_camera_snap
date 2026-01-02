@@ -28,7 +28,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
   int _frameSkip = 0;
 
   int _transformMode = 3;
-  int _gestureDebugMode = 0; // 0=AUTO, 1=FORCE 👍, 2=FORCE 👎, 3=FORCE warmup
+  int _gestureDebugMode = 0;
 
   @override
   void initState() {
@@ -135,15 +135,23 @@ class _CameraHomePageState extends State<CameraHomePage> {
 
       candidate = GestureRecognizer().recognize(candidateLandmarks, _transformMode);
 
-      if (candidate == GestureStatus.thumbsUp || candidate == GestureStatus.thumbsDown) {
+      if (candidate != GestureStatus.empty && candidate != GestureStatus.warmup) {
         final Landmark thumbTip = candidateLandmarks[4];
-        final Offset transformed = _transformLandmark(thumbTip.x, thumbTip.y);
+        final Landmark indexTip = candidateLandmarks[8];
+
+        Offset transformed;
+
+        if (candidate == GestureStatus.ok) {
+          transformed = _transformLandmark(indexTip.x, indexTip.y);
+        } else {
+          transformed = _transformLandmark(thumbTip.x, thumbTip.y);
+        }
+
         candidateX = transformed.dx;
-        candidateY = transformed.dy;
+        candidateY = transformed.dy - 40;
       }
     }
 
-    // Дебаг-режим жестов
     GestureStatus finalCandidate = candidate;
     List<Landmark> finalLandmarks = candidateLandmarks;
     double finalX = candidateX;
@@ -155,7 +163,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
         final Landmark thumbTip = candidateLandmarks[4];
         final Offset t = _transformLandmark(thumbTip.x, thumbTip.y);
         finalX = t.dx;
-        finalY = t.dy;
+        finalY = t.dy - 40;
         finalLandmarks = candidateLandmarks;
       }
     } else if (_gestureDebugMode == 2) {
@@ -164,7 +172,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
         final Landmark thumbTip = candidateLandmarks[4];
         final Offset t = _transformLandmark(thumbTip.x, thumbTip.y);
         finalX = t.dx;
-        finalY = t.dy;
+        finalY = t.dy - 40;
         finalLandmarks = candidateLandmarks;
       }
     } else if (_gestureDebugMode == 3) {
@@ -295,13 +303,21 @@ class _CameraHomePageState extends State<CameraHomePage> {
 
           Center(child: _buildStatusOverlay()),
 
-          if (_status == GestureStatus.thumbsUp || _status == GestureStatus.thumbsDown)
+          if (_status == GestureStatus.thumbsUp ||
+              _status == GestureStatus.thumbsDown ||
+              _status == GestureStatus.ok)
             CustomPaint(
               painter: GesturePainter(
-                _status == GestureStatus.thumbsUp ? '👍' : '👎',
+                _status == GestureStatus.thumbsUp
+                    ? '👍'
+                    : _status == GestureStatus.thumbsDown
+                        ? '👎'
+                        : '👌',
                 _gestureX,
                 _gestureY,
-                _status == GestureStatus.thumbsUp ? Colors.green : Colors.red,
+                _status == GestureStatus.thumbsUp || _status == GestureStatus.ok
+                    ? Colors.green
+                    : Colors.red,
               ),
               child: const SizedBox.expand(),
             ),
