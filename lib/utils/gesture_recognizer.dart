@@ -1,14 +1,10 @@
 import 'package:hand_landmarker/hand_landmarker.dart';
-
-enum GestureStatus { empty, warmup, thumbsUp, thumbsDown, ok }
+import '../models/gesture_status.dart';
+import 'constants.dart';
 
 class GestureRecognizer {
-  static const int requiredStableFrames = 10;
-
   GestureStatus recognize(List<Landmark> landmarks, int transformMode) {
-    if (landmarks.length < 21) {
-      return GestureStatus.warmup;
-    }
+    if (landmarks.length < 21) return GestureStatus.warmup;
 
     final thumbTip = landmarks[4];
     final indexTip = landmarks[8];
@@ -21,66 +17,61 @@ class GestureRecognizer {
     final pinkyMcp = landmarks[17];
     final wrist = landmarks[0];
 
-    // === OK 👌 — проверка в первую очередь (большой и указательный близко, остальные вытянуты) ===
+    // OK gesture – priority
     final thumbIndexDist = (thumbTip.x - indexTip.x).abs() + (thumbTip.y - indexTip.y).abs();
     final middleDist = (middleTip.y - middleMcp.y).abs() + (middleTip.x - middleMcp.x).abs();
     final ringDist = (ringTip.y - ringMcp.y).abs() + (ringTip.x - ringMcp.x).abs();
     final pinkyDist = (pinkyTip.y - pinkyMcp.y).abs() + (pinkyTip.x - pinkyMcp.x).abs();
 
-    if (thumbIndexDist < 0.1 && middleDist > 0.15 && ringDist > 0.15 && pinkyDist > 0.15) {
+    if (thumbIndexDist < GestureThresholds.okThumbIndexDist &&
+        middleDist > GestureThresholds.okExtendedFingerDist &&
+        ringDist > GestureThresholds.okExtendedFingerDist &&
+        pinkyDist > GestureThresholds.okExtendedFingerDist) {
       return GestureStatus.ok;
     }
 
-    // === Thumbs 👍 / 👎 — только если OK не сработал ===
-    // Проверка, что остальные 4 пальца сложены в кулак
-    bool areOtherFingersFolded = true;
+    // Check other 4 fingers are folded
     final tips = [8, 12, 16, 20];
     final mcps = [5, 9, 13, 17];
-
+    bool folded = true;
     for (int i = 0; i < tips.length; i++) {
       final dist = (landmarks[tips[i]].y - landmarks[mcps[i]].y).abs() +
-                   (landmarks[tips[i]].x - landmarks[mcps[i]].x).abs();
-      if (dist > 0.12) {
-        areOtherFingersFolded = false;
+          (landmarks[tips[i]].x - landmarks[mcps[i]].x).abs();
+      if (dist > GestureThresholds.foldedFingerDist) {
+        folded = false;
         break;
       }
     }
-
-    if (!areOtherFingersFolded) {
-      return GestureStatus.warmup;
-    }
+    if (!folded) return GestureStatus.warmup;
 
     final thumbLength = (thumbTip.x - wrist.x).abs() + (thumbTip.y - wrist.y).abs();
-    if (thumbLength < 0.15) {
-      return GestureStatus.warmup;
-    }
+    if (thumbLength < GestureThresholds.minThumbLength) return GestureStatus.warmup;
 
+    // Thumbs up / down direction
     GestureStatus detected;
-
     if (transformMode == 3) {
       final xDiff = thumbTip.x - indexMcp.x;
-      if (xDiff > 0.06) {
+      if (xDiff > GestureThresholds.thumbsUpXDiff) {
         detected = GestureStatus.thumbsUp;
-      } else if (xDiff < -0.05) {
+      } else if (xDiff < GestureThresholds.thumbsDownXDiff) {
         detected = GestureStatus.thumbsDown;
       } else {
         return GestureStatus.warmup;
       }
     } else {
       final yDiff = thumbTip.y - indexMcp.y;
-      if (yDiff < -0.08) {
+      if (yDiff < GestureThresholds.thumbsUpYDiff) {
         detected = GestureStatus.thumbsUp;
-      } else if (yDiff > 0.08) {
+      } else if (yDiff > GestureThresholds.thumbsDownYDiff) {
         detected = GestureStatus.thumbsDown;
       } else {
         return GestureStatus.warmup;
       }
     }
 
+    // Landscape right (mode 1) swaps up/down
     if (transformMode == 1) {
-      return detected == GestureStatus.thumbsUp
-          ? GestureStatus.thumbsDown
-          : GestureStatus.thumbsUp;
+      return detected == GestureStatus.thumbsUp ? GestureStatus.thumbsDown : GestureStatus.thumbsUp;
     }
 
     return detected;

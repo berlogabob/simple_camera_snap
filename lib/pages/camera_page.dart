@@ -2,9 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:native_device_orientation/native_device_orientation.dart';
+
 import '../painters/gesture_painter.dart';
 import '../painters/landmark_painter.dart';
 import '../utils/gesture_recognizer.dart';
+import '../utils/transform_utils.dart';
+import '../utils/constants.dart';
+import '../widgets/status_overlay.dart';
+import '../widgets/detection_controls.dart';
+import '../models/gesture_status.dart';
 
 class CameraHomePage extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -25,10 +31,10 @@ class _CameraHomePageState extends State<CameraHomePage> {
   double _gestureX = 0;
   double _gestureY = 0;
   List<Landmark> _currentLandmarks = [];
-  int _frameSkip = 0;
 
   int _transformMode = 3;
   int _gestureDebugMode = 0;
+  int _frameSkip = 0;
 
   @override
   void initState() {
@@ -38,16 +44,12 @@ class _CameraHomePageState extends State<CameraHomePage> {
   }
 
   Future<void> _initializeCamera() async {
-    final CameraDescription frontCamera = widget.cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.front,
+    final frontCamera = widget.cameras.firstWhere(
+      (c) => c.lensDirection == CameraLensDirection.front,
       orElse: () => widget.cameras.first,
     );
 
-    _controller = CameraController(
-      frontCamera,
-      ResolutionPreset.medium,
-      enableAudio: false,
-    );
+    _controller = CameraController(frontCamera, ResolutionPreset.medium, enableAudio: false);
 
     await _controller!.initialize();
 
@@ -64,38 +66,16 @@ class _CameraHomePageState extends State<CameraHomePage> {
     NativeDeviceOrientationCommunicator()
         .onOrientationChanged(useSensor: true)
         .listen((orientation) {
-      int newMode;
-      switch (orientation) {
-        case NativeDeviceOrientation.portraitUp:
-          newMode = 3;
-          break;
-        case NativeDeviceOrientation.landscapeRight:
-          newMode = 1;
-          break;
-        case NativeDeviceOrientation.landscapeLeft:
-          newMode = 2;
-          break;
-        case NativeDeviceOrientation.portraitDown:
-          newMode = 2;
-          break;
-        default:
-          newMode = 3;
-      }
+      int newMode = switch (orientation) {
+        NativeDeviceOrientation.portraitUp => 3,
+        NativeDeviceOrientation.landscapeRight => 1,
+        NativeDeviceOrientation.landscapeLeft => 2,
+        NativeDeviceOrientation.portraitDown => 2,
+        _ => 3,
+      };
       if (newMode != _transformMode && mounted) {
         setState(() => _transformMode = newMode);
       }
-    });
-  }
-
-  void _cycleTransformMode() {
-    setState(() {
-      _transformMode = (_transformMode + 1) % 4;
-    });
-  }
-
-  void _cycleGestureDebugMode() {
-    setState(() {
-      _gestureDebugMode = (_gestureDebugMode + 1) % 4;
     });
   }
 
@@ -108,137 +88,89 @@ class _CameraHomePageState extends State<CameraHomePage> {
       setState(() {
         _status = GestureStatus.empty;
         _currentLandmarks = [];
-        _gestureX = 0;
-        _gestureY = 0;
+        _gestureX = _gestureY = 0;
       });
     }
   }
 
   Future<void> _processCameraImage(CameraImage image) async {
-    _frameSkip++;
-    if (_frameSkip % 2 != 0) return;
+    if (++_frameSkip % (AppConstants.frameSkipCount + 1) != 0) return;
     if (!_isDetecting || !mounted || _landmarker == null) return;
 
-    final List<Hand> hands = _landmarker!.detect(
-      image,
-      _controller!.description.sensorOrientation,
-    );
+    final hands = _landmarker!.detect(image, _controller!.description.sensorOrientation);
 
     GestureStatus candidate = GestureStatus.empty;
-    double candidateX = 0;
-    double candidateY = 0;
+    double candidateX = 0, candidateY = 0;
     List<Landmark> candidateLandmarks = [];
 
     if (hands.isNotEmpty) {
-      final Hand hand = hands.first;
+      final hand = hands.first;
       candidateLandmarks = hand.landmarks;
-
       candidate = GestureRecognizer().recognize(candidateLandmarks, _transformMode);
 
       if (candidate != GestureStatus.empty && candidate != GestureStatus.warmup) {
-        final Landmark wrist = candidateLandmarks[0];
-        final Landmark thumbTip = candidateLandmarks[4];
-        final Landmark indexTip = candidateLandmarks[8];
+        final wrist = candidateLandmarks[0];
+        final thumbTip = candidateLandmarks[4];
+        final indexTip = candidateLandmarks[8];
 
-        // Центр треугольника: wrist + thumbTip + indexTip
-        final double centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
-        final double centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
+        final centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
+        final centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
 
-        final Offset transformed = _transformLandmark(centerX, centerY);
+        final transformed = transformLandmark(
+          x: centerX,
+          y: centerY,
+          sensorOrientation: _controller!.description.sensorOrientation,
+          transformMode: _transformMode,
+          screenSize: MediaQuery.of(context).size,
+        );
         candidateX = transformed.dx;
-        candidateY = transformed.dy - 20; // небольшое смещение вверх для красоты
+        candidateY = transformed.dy + AppConstants.gestureYOffset;
       }
     }
 
-    GestureStatus finalCandidate = candidate;
-    List<Landmark> finalLandmarks = candidateLandmarks;
-    double finalX = candidateX;
-    double finalY = candidateY;
-
-    if (_gestureDebugMode == 1) {
-      finalCandidate = GestureStatus.thumbsUp;
-      if (candidateLandmarks.isNotEmpty) {
-        final Landmark wrist = candidateLandmarks[0];
-        final Landmark thumbTip = candidateLandmarks[4];
-        final Landmark indexTip = candidateLandmarks[8];
-        final double centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
-        final double centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
-        final Offset t = _transformLandmark(centerX, centerY);
-        finalX = t.dx;
-        finalY = t.dy - 20;
-        finalLandmarks = candidateLandmarks;
+    // Debug overrides
+    if (_gestureDebugMode > 0) {
+      if (_gestureDebugMode == 1) candidate = GestureStatus.thumbsUp;
+      if (_gestureDebugMode == 2) candidate = GestureStatus.thumbsDown;
+      if (_gestureDebugMode == 3) {
+        candidate = GestureStatus.warmup;
+        candidateLandmarks = [];
       }
-    } else if (_gestureDebugMode == 2) {
-      finalCandidate = GestureStatus.thumbsDown;
-      if (candidateLandmarks.isNotEmpty) {
-        final Landmark wrist = candidateLandmarks[0];
-        final Landmark thumbTip = candidateLandmarks[4];
-        final Landmark indexTip = candidateLandmarks[8];
-        final double centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
-        final double centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
-        final Offset t = _transformLandmark(centerX, centerY);
-        finalX = t.dx;
-        finalY = t.dy - 20;
-        finalLandmarks = candidateLandmarks;
+      // Recalculate position for forced thumbs up/down
+      if (_gestureDebugMode <= 2 && candidateLandmarks.isNotEmpty) {
+        final wrist = candidateLandmarks[0];
+        final thumbTip = candidateLandmarks[4];
+        final indexTip = candidateLandmarks[8];
+        final centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
+        final centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
+        final t = transformLandmark(
+          x: centerX,
+          y: centerY,
+          sensorOrientation: _controller!.description.sensorOrientation,
+          transformMode: _transformMode,
+          screenSize: MediaQuery.of(context).size,
+        );
+        candidateX = t.dx;
+        candidateY = t.dy + AppConstants.gestureYOffset;
+        candidateLandmarks = candidateLandmarks;
       }
-    } else if (_gestureDebugMode == 3) {
-      finalCandidate = GestureStatus.warmup;
-      finalLandmarks = [];
-      finalX = 0;
-      finalY = 0;
     }
 
-    if (finalCandidate == _status) {
+    // Stability check
+    if (candidate == _status) {
       _stableCount++;
     } else {
       _stableCount = 1;
-      _status = finalCandidate;
+      _status = candidate;
     }
 
-    if (_stableCount >= GestureRecognizer.requiredStableFrames && mounted) {
+    if (_stableCount >= AppConstants.requiredStableFrames && mounted) {
       setState(() {
-        _gestureX = finalX;
-        _gestureY = finalY;
-        _currentLandmarks = finalLandmarks;
+        _gestureX = candidateX;
+        _gestureY = candidateY;
+        _currentLandmarks = candidateLandmarks;
       });
     }
-  }
-
-  Offset _transformLandmark(double x, double y) {
-    double tx = x;
-    double ty = y;
-
-    final int sensorOrientation = _controller!.description.sensorOrientation;
-
-    if (sensorOrientation == 270) {
-      tx = y;
-      ty = x;
-    } else if (sensorOrientation == 90) {
-      tx = 1.0 - y;
-      ty = x;
-    }
-
-    switch (_transformMode) {
-      case 0:
-        break;
-      case 1:
-        final temp = tx;
-        tx = ty;
-        ty = 1.0 - temp;
-        break;
-      case 2:
-        final temp = tx;
-        tx = 1.0 - ty;
-        ty = temp;
-        break;
-      case 3:
-        tx = 1.0 - tx;
-        ty = 1.0 - ty;
-        break;
-    }
-
-    final Size screen = MediaQuery.of(context).size;
-    return Offset(tx * screen.width, ty * screen.height);
   }
 
   @override
@@ -251,9 +183,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
   @override
   Widget build(BuildContext context) {
     if (_controller == null || !_controller!.value.isInitialized) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -264,54 +194,16 @@ class _CameraHomePageState extends State<CameraHomePage> {
             aspectRatio: _controller!.value.aspectRatio,
             child: CameraPreview(_controller!),
           ),
-
-          Positioned(
-            top: 40,
-            left: 20,
-            right: 20,
-            child: GestureDetector(
-              onTap: _cycleTransformMode,
-              child: Container(
-                color: Colors.black.withAlpha(153),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                alignment: Alignment.center,
-                child: Text(
-                  'Mode: $_transformMode (auto • tap to override)',
-                  style: const TextStyle(color: Colors.white, fontSize: 16),
-                ),
-              ),
-            ),
+          DetectionControls(
+            isDetecting: _isDetecting,
+            onToggle: _toggleDetection,
+            onCycleTransform: () => setState(() => _transformMode = (_transformMode + 1) % 4),
+            onCycleDebug: () => setState(() => _gestureDebugMode = (_gestureDebugMode + 1) % 4),
+            transformMode: _transformMode,
+            debugMode: _gestureDebugMode,
           ),
-
-          Positioned(
-            top: 80,
-            left: 20,
-            right: 20,
-            child: GestureDetector(
-              onTap: _cycleGestureDebugMode,
-              child: Container(
-                color: Colors.black.withAlpha(153),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                alignment: Alignment.center,
-                child: Text(
-                  _gestureDebugMode == 0
-                      ? 'Gesture: AUTO'
-                      : _gestureDebugMode == 1
-                          ? 'Gesture: FORCE 👍'
-                          : _gestureDebugMode == 2
-                              ? 'Gesture: FORCE 👎'
-                              : 'Gesture: FORCE WARMUP',
-                  style: const TextStyle(color: Colors.orange, fontSize: 16),
-                ),
-              ),
-            ),
-          ),
-
-          Center(child: _buildStatusOverlay()),
-
-          if (_status == GestureStatus.thumbsUp ||
-              _status == GestureStatus.thumbsDown ||
-              _status == GestureStatus.ok)
+          Center(child: StatusOverlay(_status)),
+          if (_status == GestureStatus.thumbsUp || _status == GestureStatus.thumbsDown || _status == GestureStatus.ok)
             CustomPaint(
               painter: GesturePainter(
                 _status == GestureStatus.thumbsUp
@@ -321,13 +213,10 @@ class _CameraHomePageState extends State<CameraHomePage> {
                         : '👌',
                 _gestureX,
                 _gestureY,
-                _status == GestureStatus.thumbsUp || _status == GestureStatus.ok
-                    ? Colors.green
-                    : Colors.red,
+                _status == GestureStatus.thumbsUp || _status == GestureStatus.ok ? Colors.green : Colors.red,
               ),
               child: const SizedBox.expand(),
             ),
-
           if (_isDetecting && _currentLandmarks.isNotEmpty)
             CustomPaint(
               painter: LandmarkPainter(
@@ -338,51 +227,8 @@ class _CameraHomePageState extends State<CameraHomePage> {
               ),
               child: const SizedBox.expand(),
             ),
-
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.all(30.0),
-              child: SizedBox(
-                width: double.infinity,
-                height: 60,
-                child: ElevatedButton(
-                  onPressed: _toggleDetection,
-                  child: Text(
-                    _isDetecting ? 'Stop Detecting' : 'Start Detecting',
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
-  }
-
-  Widget _buildStatusOverlay() {
-    switch (_status) {
-      case GestureStatus.empty:
-        return const Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.panorama_fish_eye, size: 100, color: Colors.grey),
-            SizedBox(height: 20),
-            Text('Show your hand', style: TextStyle(fontSize: 24, color: Colors.white)),
-          ],
-        );
-      case GestureStatus.warmup:
-        return const Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.panorama_fish_eye, size: 100, color: Colors.yellow),
-            SizedBox(height: 20),
-            Text('Hand detected', style: TextStyle(fontSize: 24, color: Colors.white)),
-          ],
-        );
-      default:
-        return const SizedBox();
-    }
   }
 }

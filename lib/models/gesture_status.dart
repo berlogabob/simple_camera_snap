@@ -1,0 +1,1 @@
+enum GestureStatus { empty, warmup, thumbsUp, thumbsDown, ok }
