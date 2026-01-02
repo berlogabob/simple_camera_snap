@@ -4,7 +4,7 @@ import 'package:hand_landmarker/hand_landmarker.dart';
 import 'package:native_device_orientation/native_device_orientation.dart';
 import '../painters/gesture_painter.dart';
 import '../painters/landmark_painter.dart';
-import '../utils/gesture_recognizer.dart'; // ← новый файл
+import '../utils/gesture_recognizer.dart';
 
 class CameraHomePage extends StatefulWidget {
   final List<CameraDescription> cameras;
@@ -27,7 +27,8 @@ class _CameraHomePageState extends State<CameraHomePage> {
   List<Landmark> _currentLandmarks = [];
   int _frameSkip = 0;
 
-  int _transformMode = 3; // твой идеальный режим для portrait up
+  int _transformMode = 3;
+  int _gestureDebugMode = 0; // 0=AUTO, 1=FORCE 👍, 2=FORCE 👎, 3=FORCE warmup
 
   @override
   void initState() {
@@ -92,6 +93,12 @@ class _CameraHomePageState extends State<CameraHomePage> {
     });
   }
 
+  void _cycleGestureDebugMode() {
+    setState(() {
+      _gestureDebugMode = (_gestureDebugMode + 1) % 4;
+    });
+  }
+
   void _toggleDetection() {
     setState(() => _isDetecting = !_isDetecting);
     if (_isDetecting) {
@@ -126,29 +133,59 @@ class _CameraHomePageState extends State<CameraHomePage> {
       final Hand hand = hands.first;
       candidateLandmarks = hand.landmarks;
 
-      candidate = GestureRecognizer().recognize(candidateLandmarks);
+      candidate = GestureRecognizer().recognize(candidateLandmarks, _transformMode);
 
       if (candidate == GestureStatus.thumbsUp || candidate == GestureStatus.thumbsDown) {
-        final Landmark indexTip = candidateLandmarks[8];
-        final Offset transformed = _transformLandmark(indexTip.x, indexTip.y);
+        final Landmark thumbTip = candidateLandmarks[4];
+        final Offset transformed = _transformLandmark(thumbTip.x, thumbTip.y);
         candidateX = transformed.dx;
         candidateY = transformed.dy;
       }
     }
 
-    // Стабильность жеста
-    if (candidate == _status) {
+    // Дебаг-режим жестов
+    GestureStatus finalCandidate = candidate;
+    List<Landmark> finalLandmarks = candidateLandmarks;
+    double finalX = candidateX;
+    double finalY = candidateY;
+
+    if (_gestureDebugMode == 1) {
+      finalCandidate = GestureStatus.thumbsUp;
+      if (candidateLandmarks.isNotEmpty) {
+        final Landmark thumbTip = candidateLandmarks[4];
+        final Offset t = _transformLandmark(thumbTip.x, thumbTip.y);
+        finalX = t.dx;
+        finalY = t.dy;
+        finalLandmarks = candidateLandmarks;
+      }
+    } else if (_gestureDebugMode == 2) {
+      finalCandidate = GestureStatus.thumbsDown;
+      if (candidateLandmarks.isNotEmpty) {
+        final Landmark thumbTip = candidateLandmarks[4];
+        final Offset t = _transformLandmark(thumbTip.x, thumbTip.y);
+        finalX = t.dx;
+        finalY = t.dy;
+        finalLandmarks = candidateLandmarks;
+      }
+    } else if (_gestureDebugMode == 3) {
+      finalCandidate = GestureStatus.warmup;
+      finalLandmarks = [];
+      finalX = 0;
+      finalY = 0;
+    }
+
+    if (finalCandidate == _status) {
       _stableCount++;
     } else {
       _stableCount = 1;
-      _status = candidate;
+      _status = finalCandidate;
     }
 
     if (_stableCount >= GestureRecognizer.requiredStableFrames && mounted) {
       setState(() {
-        _gestureX = candidateX;
-        _gestureY = candidateY;
-        _currentLandmarks = candidateLandmarks;
+        _gestureX = finalX;
+        _gestureY = finalY;
+        _currentLandmarks = finalLandmarks;
       });
     }
   }
@@ -209,13 +246,11 @@ class _CameraHomePageState extends State<CameraHomePage> {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Превью без кропа и зеркала — идеальное выравнивание
           AspectRatio(
             aspectRatio: _controller!.value.aspectRatio,
             child: CameraPreview(_controller!),
           ),
 
-          // Дебаг-индикатор (тап — переключение режима)
           Positioned(
             top: 40,
             left: 20,
@@ -234,9 +269,32 @@ class _CameraHomePageState extends State<CameraHomePage> {
             ),
           ),
 
+          Positioned(
+            top: 80,
+            left: 20,
+            right: 20,
+            child: GestureDetector(
+              onTap: _cycleGestureDebugMode,
+              child: Container(
+                color: Colors.black.withAlpha(153),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                alignment: Alignment.center,
+                child: Text(
+                  _gestureDebugMode == 0
+                      ? 'Gesture: AUTO'
+                      : _gestureDebugMode == 1
+                          ? 'Gesture: FORCE 👍'
+                          : _gestureDebugMode == 2
+                              ? 'Gesture: FORCE 👎'
+                              : 'Gesture: FORCE WARMUP',
+                  style: const TextStyle(color: Colors.orange, fontSize: 16),
+                ),
+              ),
+            ),
+          ),
+
           Center(child: _buildStatusOverlay()),
 
-          // Эмодзи 👍 / 👎
           if (_status == GestureStatus.thumbsUp || _status == GestureStatus.thumbsDown)
             CustomPaint(
               painter: GesturePainter(
@@ -248,7 +306,6 @@ class _CameraHomePageState extends State<CameraHomePage> {
               child: const SizedBox.expand(),
             ),
 
-          // Лендмарки руки
           if (_isDetecting && _currentLandmarks.isNotEmpty)
             CustomPaint(
               painter: LandmarkPainter(
@@ -260,7 +317,6 @@ class _CameraHomePageState extends State<CameraHomePage> {
               child: const SizedBox.expand(),
             ),
 
-          // Кнопка старт/стоп
           Align(
             alignment: Alignment.bottomCenter,
             child: Padding(

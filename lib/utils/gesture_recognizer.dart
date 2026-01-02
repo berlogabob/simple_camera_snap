@@ -5,53 +5,72 @@ enum GestureStatus { empty, warmup, thumbsUp, thumbsDown }
 class GestureRecognizer {
   static const int requiredStableFrames = 10;
 
-  GestureStatus recognize(List<Landmark> landmarks) {
+  GestureStatus recognize(List<Landmark> landmarks, int transformMode) {
     if (landmarks.length < 21) {
       return GestureStatus.warmup;
     }
 
     final Landmark thumbTip = landmarks[4];
-    final Landmark indexTip = landmarks[8];
+    final Landmark indexMcp = landmarks[5];
+    final Landmark middleMcp = landmarks[9];
+    final Landmark ringMcp = landmarks[13];
+    final Landmark pinkyMcp = landmarks[17];
     final Landmark wrist = landmarks[0];
 
-    // Расстояние от кончика большого пальца до запястья (в нормированных координатах)
-    final double thumbToWrist = (thumbTip.x - wrist.x).abs() + (thumbTip.y - wrist.y).abs();
+    // Проверка, что остальные пальцы сложены
+    bool areOtherFingersFolded = true;
+    final List<int> tips = [8, 12, 16, 20];
+    final List<int> mcps = [5, 9, 13, 17];
 
-    // Если большой палец близко к запястью — считаем, что жест неопределённый (кулак или просто рука)
-    if (thumbToWrist < 0.1) {
+    for (int i = 0; i < tips.length; i++) {
+      final double dist = (landmarks[tips[i]].y - landmarks[mcps[i]].y).abs() +
+                          (landmarks[tips[i]].x - landmarks[mcps[i]].x).abs();
+      if (dist > 0.15) {
+        areOtherFingersFolded = false;
+        break;
+      }
+    }
+
+    if (!areOtherFingersFolded) {
       return GestureStatus.warmup;
     }
 
-    // Сравниваем высоту кончика большого и указательного пальцев
-    final double yDiff = thumbTip.y - indexTip.y;
+    final double thumbLength = (thumbTip.x - wrist.x).abs() + (thumbTip.y - wrist.y).abs();
+    if (thumbLength < 0.15) {
+      return GestureStatus.warmup;
+    }
 
-    if (yDiff > 0.05) {
-      return GestureStatus.thumbsUp;
-    } else if (yDiff < -0.05) {
-      return GestureStatus.thumbsDown;
+    GestureStatus detected;
+
+    if (transformMode == 3) {
+      // Portrait up — используем xDiff (из-за поворота осей камерой)
+      final double xDiff = thumbTip.x - indexMcp.x;
+      if (xDiff > 0.06) { // большой вправо = thumbsUp (вверх)
+        detected = GestureStatus.thumbsUp;
+      } else if (xDiff < -0.05) { // большой влево = thumbsDown (вниз)
+        detected = GestureStatus.thumbsDown;
+      } else {
+        return GestureStatus.warmup;
+      }
     } else {
-      return GestureStatus.warmup;
-    }
-  }
-
-  /// Возвращает текущий стабильный жест и координаты (для эмодзи)
-  /// candidateX/Y — координаты указательного пальца (index tip)
-  GestureStatus updateStableGesture({
-    required GestureStatus candidate,
-    required GestureStatus current,
-    required int stableCount,
-    required double candidateX,
-    required double candidateY,
-    required List<Landmark> candidateLandmarks,
-    required Function(GestureStatus status, double x, double y, List<Landmark> landmarks) onStable,
-  }) {
-    int newStableCount = candidate == current ? stableCount + 1 : 1;
-
-    if (newStableCount >= requiredStableFrames) {
-      onStable(candidate, candidateX, candidateY, candidateLandmarks);
-      return candidate;
+      // Для landscape — стандартная проверка по yDiff
+      final double yDiff = thumbTip.y - indexMcp.y;
+      if (yDiff < -0.08) {
+        detected = GestureStatus.thumbsUp;
+      } else if (yDiff > 0.08) {
+        detected = GestureStatus.thumbsDown;
+      } else {
+        return GestureStatus.warmup;
+      }
     }
 
-    return current;
+    // Инверсия только для Mode 1 (landscape right)
+    if (transformMode == 1) {
+      return detected == GestureStatus.thumbsUp
+          ? GestureStatus.thumbsDown
+          : GestureStatus.thumbsUp;
+    }
+
+    return detected;
   }
 }
