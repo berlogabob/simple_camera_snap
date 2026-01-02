@@ -28,7 +28,7 @@ class _CameraHomePageState extends State<CameraHomePage> {
   int _frameSkip = 0;
 
   int _transformMode = 3;
-  int _gestureDebugMode = 0; // 0=AUTO, 1=FORCE 👍, 2=FORCE 👎, 3=FORCE warmup
+  int _gestureDebugMode = 0;
 
   @override
   void initState() {
@@ -135,15 +135,21 @@ class _CameraHomePageState extends State<CameraHomePage> {
 
       candidate = GestureRecognizer().recognize(candidateLandmarks, _transformMode);
 
-      if (candidate == GestureStatus.thumbsUp || candidate == GestureStatus.thumbsDown) {
+      if (candidate != GestureStatus.empty && candidate != GestureStatus.warmup) {
+        final Landmark wrist = candidateLandmarks[0];
         final Landmark thumbTip = candidateLandmarks[4];
-        final Offset transformed = _transformLandmark(thumbTip.x, thumbTip.y);
+        final Landmark indexTip = candidateLandmarks[8];
+
+        // Центр треугольника: wrist + thumbTip + indexTip
+        final double centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
+        final double centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
+
+        final Offset transformed = _transformLandmark(centerX, centerY);
         candidateX = transformed.dx;
-        candidateY = transformed.dy;
+        candidateY = transformed.dy - 20; // небольшое смещение вверх для красоты
       }
     }
 
-    // Дебаг-режим жестов
     GestureStatus finalCandidate = candidate;
     List<Landmark> finalLandmarks = candidateLandmarks;
     double finalX = candidateX;
@@ -152,19 +158,27 @@ class _CameraHomePageState extends State<CameraHomePage> {
     if (_gestureDebugMode == 1) {
       finalCandidate = GestureStatus.thumbsUp;
       if (candidateLandmarks.isNotEmpty) {
+        final Landmark wrist = candidateLandmarks[0];
         final Landmark thumbTip = candidateLandmarks[4];
-        final Offset t = _transformLandmark(thumbTip.x, thumbTip.y);
+        final Landmark indexTip = candidateLandmarks[8];
+        final double centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
+        final double centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
+        final Offset t = _transformLandmark(centerX, centerY);
         finalX = t.dx;
-        finalY = t.dy;
+        finalY = t.dy - 20;
         finalLandmarks = candidateLandmarks;
       }
     } else if (_gestureDebugMode == 2) {
       finalCandidate = GestureStatus.thumbsDown;
       if (candidateLandmarks.isNotEmpty) {
+        final Landmark wrist = candidateLandmarks[0];
         final Landmark thumbTip = candidateLandmarks[4];
-        final Offset t = _transformLandmark(thumbTip.x, thumbTip.y);
+        final Landmark indexTip = candidateLandmarks[8];
+        final double centerX = (wrist.x + thumbTip.x + indexTip.x) / 3;
+        final double centerY = (wrist.y + thumbTip.y + indexTip.y) / 3;
+        final Offset t = _transformLandmark(centerX, centerY);
         finalX = t.dx;
-        finalY = t.dy;
+        finalY = t.dy - 20;
         finalLandmarks = candidateLandmarks;
       }
     } else if (_gestureDebugMode == 3) {
@@ -295,13 +309,21 @@ class _CameraHomePageState extends State<CameraHomePage> {
 
           Center(child: _buildStatusOverlay()),
 
-          if (_status == GestureStatus.thumbsUp || _status == GestureStatus.thumbsDown)
+          if (_status == GestureStatus.thumbsUp ||
+              _status == GestureStatus.thumbsDown ||
+              _status == GestureStatus.ok)
             CustomPaint(
               painter: GesturePainter(
-                _status == GestureStatus.thumbsUp ? '👍' : '👎',
+                _status == GestureStatus.thumbsUp
+                    ? '👍'
+                    : _status == GestureStatus.thumbsDown
+                        ? '👎'
+                        : '👌',
                 _gestureX,
                 _gestureY,
-                _status == GestureStatus.thumbsUp ? Colors.green : Colors.red,
+                _status == GestureStatus.thumbsUp || _status == GestureStatus.ok
+                    ? Colors.green
+                    : Colors.red,
               ),
               child: const SizedBox.expand(),
             ),
